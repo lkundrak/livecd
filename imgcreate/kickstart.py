@@ -554,4 +554,4 @@ def get_post_scripts(ks):
     return scripts
 
 def selinux_enabled(ks):
-    return ks.handler.selinux.selinux == ksconstants.SELINUX_ENFORCING
+    return ks.handler.selinux.selinux != ksconstants.SELINUX_DISABLED
