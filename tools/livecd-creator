@@ -49,6 +49,9 @@ def parse_options(args):
     imgopt.add_option("", "--compression-type", type="string", dest="compress_type",
                       help="Compression type recognized by mksquashfs (default gzip, lzma needs custom kernel, lzo needs a 2.6.36+ kernel)",
                       default="gzip")
+    imgopt.add_option("", "--mbr", action="store_true",
+                      dest="mbr", default=False,
+                      help="Create an image with MBR partition table (default: False)")
     parser.add_option_group(imgopt)
 
     # options related to the config of your system
@@ -136,7 +139,9 @@ def main():
 
     ks = imgcreate.read_kickstart(options.kscfg)
 
-    if options.image_type == 'livecd':
+    if options.mbr:
+        creator = imgcreate.PartitionedImageCreator(ks, name, fs_label)
+    elif options.image_type == 'livecd':
         creator = imgcreate.LiveImageCreator(ks, name, fs_label)
     elif options.image_type == 'image':
         creator = imgcreate.LoopImageCreator(ks, name, fs_label)
