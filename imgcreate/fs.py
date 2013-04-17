@@ -418,7 +418,7 @@ class ExtDiskMount(DiskMount):
         self.blocksize = blocksize
         self.fslabel = "_" + fslabel
 
-    def __format_filesystem(self):
+    def _r_format_filesystem(self):
         logging.debug("Formating %s filesystem on %s" % (self.fstype, self.disk.device))
         rc = subprocess.call(["/sbin/mkfs." + self.fstype,
                               "-F", "-L", self.fslabel,
@@ -457,7 +457,7 @@ class ExtDiskMount(DiskMount):
         if resize:
             self.__resize_filesystem()
         else:
-            self.__format_filesystem()
+            self._r_format_filesystem()
 
     def mount(self):
         self.__create()
