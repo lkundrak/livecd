@@ -423,6 +423,7 @@ class ExtDiskMount(DiskMount):
         rc = subprocess.call(["/sbin/mkfs." + self.fstype,
                               "-F", "-L", self.fslabel,
                               "-m", "1", "-b", str(self.blocksize),
+                              "-O", "none,has_journal,extent,huge_file,flex_bg,uninit_bg,dir_nlink,extra_isize",
                               self.disk.device])
         #                      str(self.disk.size / self.blocksize)])
         if rc != 0:
