@@ -535,6 +535,24 @@ class ExtDiskMount(DiskMount):
         self.__resize_filesystem(size)
         return minsize
 
+class FatDiskMount(DiskMount):
+    """A DiskMount object that is able to format/resize FAT filesystems."""
+    def __init__(self, disk, mountdir, fstype, blocksize, fslabel,
+                 rmmountdir=True, tmpdir="/tmp"):
+        DiskMount.__init__(self, disk, mountdir, fstype, rmmountdir)
+        self.blocksize = blocksize
+        self.fslabel = "_" + fslabel
+        self.tmpdir = tmpdir
+
+    def mount(self):
+        logging.info("Formating %s filesystem on %s" % (self.fstype, self.disk.device))
+        rc = subprocess.call(["/sbin/mkfs." + self.fstype, "-n", self.fslabel, self.disk.device])
+
+        if rc != 0:
+            raise MountError("Error creating %s filesystem" % (self.fstype,))
+
+        DiskMount.mount(self)
+
 class DeviceMapperSnapshot(object):
     def __init__(self, imgloop, cowloop):
         self.imgloop = imgloop
