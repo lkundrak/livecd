@@ -283,12 +283,17 @@ class RawDisk(Disk):
 
 class LoopbackDisk(Disk):
     """A Disk backed by a file via the loop module."""
-    def __init__(self, lofile, size):
+    def __init__(self, lofile, size, offset=0):
         Disk.__init__(self, size)
         self.lofile = lofile
+        self.size = size
+        self.offset = offset
 
     def fixed(self):
-        return False
+        if self.offset:
+            return True
+        else:
+            return False
 
     def exists(self):
         return os.path.exists(self.lofile)
@@ -308,7 +313,8 @@ class LoopbackDisk(Disk):
         device = losetupOutput.split()[0]
 
         logging.info("Losetup add %s mapping to %s"  % (device, self.lofile))
-        rc = call(["/sbin/losetup", device, self.lofile])
+        rc = call(["/sbin/losetup", "-o", str(self.offset),
+                   "--sizelimit", str(self.size), device, self.lofile])
         if rc != 0:
             raise MountError("Failed to allocate loop device for '%s'" %
                              self.lofile)
