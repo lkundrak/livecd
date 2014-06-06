@@ -189,7 +189,13 @@ class AuthConfig(KickstartConfig):
 class FirewallConfig(KickstartConfig):
     """A class to apply a kickstart firewall configuration to a system."""
     def apply(self, ksfirewall):
-        args = ["/usr/bin/firewall-offline-cmd"]
+        if os.path.exists(self.path("/usr/bin/firewall-offline-cmd")):
+            args = ["/usr/bin/firewall-offline-cmd"]
+        elif os.path.exists(self.path("/usr/sbin/lokkit")):
+            args = ["/usr/sbin/lokkit", "-f", "--quiet", "--nostart"]
+        else:
+            return
+
         # enabled is None if neither --enable or --disable is passed
         # default to enabled if nothing has been set.
         if ksfirewall.enabled == False:
