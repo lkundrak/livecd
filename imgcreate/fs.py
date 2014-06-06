@@ -455,7 +455,8 @@ class ExtDiskMount(DiskMount):
         logging.info("Formating %s filesystem on %s" % (self.fstype, self.disk.device))
         args = [ "/sbin/mkfs." + self.fstype ]
         if self.fstype.startswith("ext"):
-            args = args + [ "-F", "-L", self.fslabel, "-m", "1", "-b", str(self.blocksize) ]
+            args = args + [ "-F", "-L", self.fslabel, "-m", "1", "-b", str(self.blocksize),
+		"-O", "none,has_journal,extent,huge_file,flex_bg,uninit_bg,dir_nlink,extra_isize" ]
         elif self.fstype == "xfs":
             args = args + [ "-L", self.fslabel[0:10], "-b", "size=%s" % str(self.blocksize) ]
         elif self.fstype == "btrfs":
