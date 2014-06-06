@@ -417,12 +417,17 @@ class DiskMount(Mount):
 
         self.mounted = True
 
+    def uuid(self):
+        args = ("/sbin/blkid", "-s", "UUID", "-o", "value", self.disk.device)
+        rc = subprocess.Popen(args, stdout=subprocess.PIPE).communicate()[0].rstrip()
+        return rc
+
 class ExtDiskMount(DiskMount):
     """A DiskMount object that is able to format/resize ext[23] filesystems."""
     def __init__(self, disk, mountdir, fstype, blocksize, fslabel, rmmountdir=True):
         DiskMount.__init__(self, disk, mountdir, fstype, rmmountdir)
         self.blocksize = blocksize
-        self.fslabel = "_" + fslabel
+        self.fslabel = fslabel
 
     def _r_format_filesystem(self):
         logging.debug("Formating %s filesystem on %s" % (self.fstype, self.disk.device))
@@ -508,7 +513,7 @@ class FatDiskMount(DiskMount):
                  rmmountdir=True, tmpdir="/tmp"):
         DiskMount.__init__(self, disk, mountdir, fstype, rmmountdir)
         self.blocksize = blocksize
-        self.fslabel = "_" + fslabel
+        self.fslabel = fslabel
         self.tmpdir = tmpdir
 
     def mount(self):

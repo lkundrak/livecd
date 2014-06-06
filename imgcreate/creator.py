@@ -24,6 +24,7 @@ import tempfile
 import shutil
 import logging
 import subprocess
+import parted
 
 import selinux
 import yum
@@ -950,3 +951,163 @@ class LoopImageCreator(ImageCreator):
     def _stage_final_image(self):
         self._resparse()
         shutil.move(self._image, self._outdir + "/" + self.name + ".img")
+
+class PartitionedImageCreator(ImageCreator):
+    """Installs a system into a loopback-mountable filesystem image.
+
+    LoopImageCreator is a straightforward ImageCreator subclass; the system
+    is installed into an ext3 filesystem on a sparse file which can be
+    subsequently loopback-mounted.
+
+    """
+
+    def __init__(self, ks, name, fslabel = None):
+        """Initialize a LoopImageCreator instance.
+
+        This method takes the same arguments as ImageCreator.__init__() with
+        the addition of:
+
+        fslabel -- A string used as a label for any filesystems created.
+
+        """
+        ImageCreator.__init__(self, ks, name)
+
+        self.__fslabel = None
+        self.fslabel = fslabel
+
+        self.__minsize_KB = 0
+        self.__blocksize = 4096
+
+        self.__imgdir = None
+
+        self.__image_size_mb = 0
+        for p in self.ks.handler.partition.partitions:
+            if not p.size:
+                raise CreatorError("All partitions should have sizes")
+            self.__image_size_mb += p.size
+
+        self.__partitions = None
+
+    #
+    # Properties
+    #
+    def __get_image(self):
+        if self.__imgdir is None:
+            raise CreatorError("_image is not valid before calling mount()")
+        return self.__imgdir + "/disk.img"
+    _image = property(__get_image)
+    """The location of the image file.
+
+    This is the path to the filesystem image. Subclasses may use this path
+    in order to package the image in _stage_final_image().
+
+    Note, this directory does not exist before ImageCreator.mount() is called.
+
+    Note also, this is a read-only attribute.
+
+    """
+
+    def _base_on(self, base_on):
+        shutil.copyfile(base_on, self._image)
+
+    #
+    # Actual implementation
+    #
+    def _mount_instroot(self, base_on = None):
+        self.__imgdir = self._mkdtemp()
+
+        # Create a disk image with empty MBR partition table
+        subprocess.call (('dd', 'if=/dev/zero', 'of=%s' % (self._image),
+            'bs=1024k', 'seek=%s' % (self.__image_size_mb), 'count=0'))
+        device = parted.Device(path=self._image)
+        disk = parted.freshDisk(device, 'msdos')
+
+        partitions = []
+        offset_mb = 0
+        for p in self.ks.handler.partition.partitions:
+
+            offset = offset_mb * 1024L * 1024L
+            size = p.size * 1024L * 1024L
+
+            start_sector = offset / device.sectorSize
+            end_sector = (offset + size) / device.sectorSize - 1
+
+            # Move beginning of the first partition so that it does not
+            # overlap the partition table
+            if start_sector == 0:
+                    start_sector = 63
+                    size -= 63 * device.sectorSize
+            offset = start_sector * device.sectorSize
+
+            geometry = parted.Geometry (device=device, start=start_sector, end=end_sector)
+            fstype = p.fstype
+            if fstype == 'vfat':
+                fstype = 'fat32'
+            fs = parted.FileSystem (fstype, geometry=geometry)
+            partition = parted.Partition (disk=disk, fs=fs, type=parted.PARTITION_NORMAL, geometry=geometry)
+            geometry = parted.Geometry(device=device, start=start_sector, end=end_sector)
+            constraint = parted.Constraint(exactGeom=geometry)
+            disk.addPartition(partition=partition, constraint=constraint)
+
+            partitions.append({'p': p, 'size': size, 'offset': offset})
+            offset_mb += p.size
+
+        disk.commit()
+
+        # Partitions should be mounted from the shortest paths to the longest
+        self.__partitions = sorted(partitions, key=lambda k: len(k['p'].mountpoint))
+
+        for par in self.__partitions:
+            loop = LoopbackDisk(self._image, par['size'], par['offset'])
+            loop.create()
+            fslabel = par['p'].label
+            if not fslabel:
+                fslabel = "_" + self.fslabel
+            if (par['p'].fstype == 'fat16' or par['p'].fstype == 'fat32' or
+                par['p'].fstype == 'vfat' or par['p'].fstype == 'msdos'):
+                instloop = FatDiskMount(loop,
+                               self._instroot + par['p'].mountpoint,
+                               'vfat',
+                               self.__blocksize,
+                               fslabel,
+                               self.tmpdir)
+            else:
+                instloop = ExtDiskMount(loop,
+                               self._instroot + par['p'].mountpoint,
+                               par['p'].fstype,
+                               self.__blocksize,
+                               fslabel,
+                               self.tmpdir)
+            instloop.mount()
+            par['disk'] = instloop
+
+    def _get_fstab(self):
+        """Return the desired contents of /etc/fstab.
+
+        This is the hook where subclasses may specify the contents of
+        /etc/fstab by returning a string containing the desired contents.
+
+        A sensible default implementation is provided.
+
+        """
+        s =  ""
+        i = 1
+        for par in self.__partitions:
+            opts = par['p'].fsopts
+            if not opts:
+                opts = 'defaults'
+            s += "UUID=" + par['disk'].uuid() + " "
+            s += par['p'].mountpoint + " "
+            s += par['p'].fstype + " "
+            s += opts + " "
+            s += "1 %d\n" % i
+            i = i + 1
+        s += self._get_fstab_special()
+        return s
+
+    def _unmount_instroot(self):
+        if not self.__partitions is None:
+            # Unmount in reverse order
+            self.__partitions.reverse()
+            for par in self.__partitions:
+                par['disk'].cleanup()
